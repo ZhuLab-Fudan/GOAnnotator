@@ -1,3 +1,4 @@
 src/dependencies/pro_index/_b.fdt filter=lfs diff=lfs merge=lfs -text
 src/dependencies/pro_index/_b.tvd filter=lfs diff=lfs merge=lfs -text
 src/dependencies/bp_pro2go.npy filter=lfs diff=lfs merge=lfs -text
+src/dependencies/protein_metadata.npy filter=lfs diff=lfs merge=lfs -text
