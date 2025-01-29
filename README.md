@@ -18,6 +18,17 @@ numpy == 1.23.5
 
 nltk == 3.8.1
 
+# data process
+
+build pubmed index:
+
+```shell
+python src/extract_medline_index.py
+```
+
 # inference
 
-python experiments/predict.py
+```shell
+cd experiments/scripts
+bash run_GOR2023.sh
+```
