@@ -23,7 +23,15 @@ nltk == 3.8.1
 build pubmed index:
 
 ```shell
-python src/extract_medline_index.py
+cd experiments/scripts
+bash build_index.sh
+```
+
+unzip protein_metadata:
+
+```shell
+cd src/dependencies
+tar -xzvf protein_metadata.tar.gz protein_metadata.npy
 ```
 
 # inference
