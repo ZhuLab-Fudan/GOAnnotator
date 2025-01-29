@@ -1,3 +1,4 @@
+import os
 import json
 from typing import List, Dict
 from sentence_transformers import CrossEncoder
@@ -7,27 +8,30 @@ import numpy as np
 
 # Import utilities
 from utils import average_scores
-from src.utils import TASK_DEFINITIONS, filter_text, filter_species, extract_for_FIR, extract_for_train
+from src.utils import TASK_DEFINITIONS, filter_text, filter_species, extract_for_FIR, extract_for_train, Config
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class PubRetriever:
     """
     A class for protein-related literature retrieval and reranking for function annotation.
     """
 
-    def __init__(self, model_path: str, index_path: str, metadata_path: str, k: int = 50, task: str = "mf"):
+    def __init__(self, config: Config, model_path: str, input: List[str], output: List[str], k: int = 50, task: str = "mf"):
         """
         Initialize the PubRetriever.
         
         Args:
             model_path (str): Path to the pre-trained CrossEncoder model.
-            index_path (str): Path to the Lucene index for literature retrieval.
-            metadata_path (str): Path to the metadata file containing protein information.
+            input (List[str]): List of protein IDs to process.
             k (int): Number of documents to retrieve. Default is 50.
             task (str): Annotation task type ('mf', 'bp', 'cc'). Default is 'mf'.
         """
         self.model = CrossEncoder(model_path, max_length=512)
-        self.searcher = LuceneSearcher(index_path)
-        self.metadata = np.load(metadata_path, allow_pickle=True).item()
+        self.searcher = LuceneSearcher(config.PMID_INDEX_PATH)
+        self.metadata = np.load(config.METADATA_PATH, allow_pickle=True).item()
+        self.input = input  
+        self.output = output
         self.task = task
         self.k = k
         
@@ -194,20 +198,21 @@ class PubRetriever:
         hybrid_retrieval_results = self.hybrid_retrieval(protein_metadata)
         return self.rerank_documents(protein_metadata, hybrid_retrieval_results)
 
-    def process_proteins(self, protein_ids: List[str], output_path: str):
+    def process_proteins(self):
         """
         Process a list of protein IDs, perform retrieval and reranking, and save results.
         
         Args:
-            protein_ids (List[str]): List of protein IDs to process.
             output_path (str): Path to save the results.
         """
-        with open(output_path, "w") as output_file:
-            for proid in tqdm(protein_ids, desc="Processing proteins"):
-                if proid not in self.metadata:
-                    print(f"Metadata missing for Protein ID: {proid}")
-                    continue
-                protein_metadata = self.metadata.get(proid, {})
-                documents = self.retrieve_and_rerank(protein_metadata)
-                for doc in documents:
-                    output_file.write(f"{proid}\t{doc['pmid']}\t{doc['score']:.4f}\n")
+        with open(self.input) as input_file:
+            with open(self.output, "w") as output_file:
+                proids = [_.strip() for _ in input_file.readlines]
+                for proid in tqdm(proids, desc="Processing proteins"):
+                    if proid not in self.metadata:
+                        print(f"Metadata missing for Protein ID: {proid}")
+                        continue
+                    protein_metadata = self.metadata.get(proid, {})
+                    documents = self.retrieve_and_rerank(protein_metadata)
+                    for doc in documents:
+                        output_file.write(f"{proid}\t{doc['pmid']}\t{doc['score']:.4f}\n")

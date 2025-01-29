@@ -1,85 +1,48 @@
 import os
-from typing import List, Dict
 import json
 import numpy as np
 from tqdm import tqdm
 from pyserini.search import SimpleSearcher as LuceneSearcher
+from pygaggle.rerank.base import Query, Text
+from pygaggle.rerank.transformer import MonoT5
 from sentence_transformers import CrossEncoder
 from transformers import T5ForConditionalGeneration
-from pygaggle.rerank.transformer import MonoT5
 import nltk
 import torch.nn as nn
-from src.utils import TASK_DEFINITIONS, extract_for_FIR, extract_for_train
-from utils import  get_text 
+
+from src.utils import TASK_DEFINITIONS, extract_for_train, Config
+from utils import get_text
 
 
 class GORetrieverPlus:
-    """
-    A class for GO annotation retrieval and reranking.
-    """
+    """Class for GO annotation retrieval and reranking."""
 
-    def __init__(
-        self,
-        model_path: str,
-        pro_index_path: str,
-        go_index_path: str,
-        metadata_path: str,
-        pmid2text_path: str,
-        task_pro2go_path: str,
-        input_file: str,
-        task: str = "bp",
-        pro: int = 3,
-        filter_rank: bool = False,
-        save_dir: str = "./results",
-        device: str = "cuda",
-    ):
+    def __init__(self, config: Config, save_dir, task, data, input, pro_num: int=3, filter_rank: bool=True):
         """
         Initialize the GORetrieverPlus class.
-
-        Args:
-            model_path (str): Path to the pre-trained CrossEncoder model.
-            pro_index_path (str): Path to the Lucene index for protein retrieval.
-            go_index_path (str): Path to the Lucene index for GO term retrieval.
-            pmid2text_path (str): Path to the PMID to text mapping file.
-            task_pro2go_path (str): Path to the task-specific protein to GO mapping file.
-            input_file (str): Path to the input file containing protein-PMID mappings.
-            task (str): Task type ('bp', 'mf', 'cc'). Default is 'bp'.
-            pro (int): Number of proteins to retrieve. Default is 3.
-            filter_rank (bool): Whether to filter by rank. Default is False.
-            save_dir (str): Directory to save results. Default is './results'.
-            device (str): Device to run the model on ('cuda' or 'cpu'). Default is 'cuda'.
         """
-        self.model_path = model_path
-        self.pro_index_path = pro_index_path
-        self.go_index_path = go_index_path
-        self.metadata_path = metadata_path
-        self.pmid2text_path = pmid2text_path
-        self.task_pro2go_path = task_pro2go_path
-        self.input_file = input_file
-        self.task = task
-        self.pro = pro
-        self.filter_rank = filter_rank
+        
         self.save_dir = save_dir
-        self.device = device
+        self.data = data
+        self.input = input
+        self.filter_rank = filter_rank
+        self.pro_num=pro_num
 
-        # Load resources
-        self.metadata = self._load_metadata(self.metadata_path)
-        self.pmid2text = self._load_metadata(self.pmid2text_path)
-        self.pro_searcher = LuceneSearcher(self.pro_index_path)
-        self.go_searcher = LuceneSearcher(self.go_index_path)
+        # Load metadata
+        metadata = self._load_metadata(config.METADATA_PATH)
+        self.proid2name = dict(map(lambda item: (item[0], extract_for_train(item[1])), metadata.items()))
+        self.pmid2text = self._load_metadata(config.PMID2TEXT_FILE)
+        self.pro_searcher = LuceneSearcher(config.PRO_INDEX_PATH)
+        self.pmid_searcher = LuceneSearcher(config.PMID_INDEX_PATH)
+        self.go_searcher = LuceneSearcher(config.GO_INDEX_PATH)
 
         # Initialize models
         self.t5_reranker = self._initialize_t5_model()
-        self.cross_encoder = CrossEncoder(self.model_path, max_length=512, device=self.device)
-
-        # Load NLTK tokenizer
+        self.cross_encoder = CrossEncoder(config.MODEL_PATH.format(task), max_length=512)
         self.tokenizer = nltk.data.load("tokenizers/punkt/english.pickle")
 
-        # Create save directory if it doesn't exist
-        os.makedirs(self.save_dir, exist_ok=True)
-
     @staticmethod
-    def _load_metadata(file_path: str) -> Dict:
+    def _load_metadata(file_path):
         """Load metadata from a .npy file."""
         return np.load(file_path, allow_pickle=True).item()
 
@@ -91,34 +54,36 @@ class GORetrieverPlus:
         tokenizer = MonoT5.get_tokenizer("t5-base")
         return MonoT5(model, tokenizer)
 
-    def data_extract(self) -> Dict[str, str]:
+    def data_extract(self):
         """
-        Extract relevant text for proteins based on PMIDs.
+        Extract relevant sentences from PubMed abstracts for proteins.
+        Uses MonoT5 reranker to select the most relevant sentences.
 
         Returns:
-            Dict[str, str]: A dictionary mapping protein IDs to extracted text.
+            Dictionary mapping protein IDs to extracted text.
         """
-        save_file = os.path.join(self.save_dir, f"{self.task}_extracted_texts.npy")
+        save_file = os.path.join(self.save_dir, "caches", f"{self.task}_{self.data}_t5_texts.npy")
+        os.makedirs(os.path.dirname(save_file), exist_ok=True)
+        
+        score_file = save_file.replace("texts", "texts_scores.npy")
+
         if os.path.exists(save_file):
             print(f"Loading extracted data from: {save_file}")
             return self._load_metadata(save_file)
 
         pro2text = {}
+        text_scores = {}
         pros = set()
 
-        with open(self.input_file) as f:
+        with open(self.input) as f:
             lines = f.readlines()
-            for line in tqdm(lines, desc="Extracting data"):
-                line = line.split()
-                pro = line[0]
-                pmid = line[1].strip()
+            for line in tqdm(lines, desc="Extracting sentences"):
+                pro, pmid = line.split()[:2]
+                pmid = pmid.strip()
 
-                # Filter by rank if required
+                # Filter based on ranking threshold
                 if self.filter_rank:
-                    if len(line) < 3:
-                        print(f"Missing score for protein {pro}")
-                        continue
-                    score = float(line[2].strip())
+                    score = float(line.split()[2].strip())
                     if pro not in pros:
                         threshold = min(0.5, score)
                         pros.add(pro)
@@ -126,7 +91,7 @@ class GORetrieverPlus:
                         continue
 
                 # Get protein name
-                if pro not in self.metadata:
+                if pro not in self.proid2name:
                     print(f"Missing Protein Name: {pro}")
                     continue
 
@@ -135,137 +100,185 @@ class GORetrieverPlus:
                     text = self.pmid2text[pmid]
                 else:
                     try:
-                        text = json.loads(self.pro_searcher.doc(pmid).raw())["contents"]
+                        text = json.loads(self.pmid_searcher.doc(pmid).raw())["contents"]
                     except AttributeError:
-                        text = get_text(f"https://pubmed.ncbi.nlm.nih.gov/{pmid}")
-                        if text:  # Only cache if text is not empty
-                            self.pmid2text[pmid] = text
+                        text = get_text('https://pubmed.ncbi.nlm.nih.gov/'+pmid)
+                        self.pmid2text[pmid] = text
+                        continue
 
                 sentences = self.tokenizer.tokenize(text)
                 if pro not in pro2text:
                     pro2text[pro] = []
 
-                # Filter single-sentence documents
+                # Skip documents with only one sentence
                 if len(sentences) <= 1:
                     print(f"Only one sentence in document: {pmid}")
                     continue
 
-                # Filter sentences that are already in pro2text[pro]
-                new_sentences = [s for s in sentences if s not in pro2text[pro]]
-                pro2text[pro].extend(new_sentences)
+                pro2text[pro].extend(sentences)
 
-        # Save extracted data
+        # Apply T5 reranker
+        for pro in tqdm(pro2text.keys(), desc="Reranking sentences"):
+            query = f"What is the {TASK_DEFINITIONS[self.task]} of protein {self.proid2name[pro]}?"
+            sentences = pro2text[pro]
+
+            if len(sentences) < 3:
+                print(f"Too little literature data for: {pro}")
+                continue
+
+            texts = [Text(sentence, {}, 0) for sentence in sentences]
+            scores = self.t5_reranker.rerank(Query(query), texts)
+
+            reranked_scores = {sentences[i]: float(scores[i].score) for i in range(len(scores))}
+            text_scores[pro] = reranked_scores
+
+            # Select top sentences
+            top_sentences = sorted(reranked_scores, key=reranked_scores.get, reverse=True)[:len(reranked_scores)//2]
+            pro2text[pro] = ' '.join(top_sentences)
+
+        np.save(score_file, text_scores)
         np.save(save_file, pro2text)
+        print(f"Data extraction completed! Saved to {save_file}")
+
         return pro2text
 
-    def all_retrieval_dict(self) -> Dict[str, List[str]]:
+    def retrieval(self):
         """
         Retrieve GO annotations for proteins.
-
         Returns:
-            Dict[str, List[str]]: A dictionary mapping protein IDs to their associated GO annotations.
+            Dictionary mapping protein IDs to retrieved GO terms.
         """
-        save_file = os.path.join(self.save_dir, f"{self.task}_retrieval_all.npy")
+        save_file = os.path.join(self.save_dir, "caches", f"{self.task}_{self.data}_retrieval.npy")
+        os.makedirs(os.path.dirname(save_file), exist_ok=True)
+
         if os.path.exists(save_file):
             print(f"Loading retrieval data from: {save_file}")
             return self._load_metadata(save_file)
 
-        retrieval_dict = {}
         pro2text = self.data_extract()
-        pro2go = self._load_metadata(self.task_pro2go_path)
+        pro2go = self._load_metadata(self.config.TASK_PRO2GO_FILE.format((self.task)))
+        retrieval_dict = {}
 
-        for proid, sentences in tqdm(pro2text.items(), desc="Retrieving GO annotations"):
-            k = 0
-            res = []
+        for proid in tqdm(pro2text, desc="Retrieving GO terms"):
             try:
                 proname = json.loads(self.pro_searcher.doc(proid).raw())["contents"]
             except AttributeError:
                 print(f"Missing Protein Name: {proid}")
                 continue
 
-            # Search for related proteins
             results = self.pro_searcher.search(proname, 3000)
+            k = 0
+            res = []
             for result in results:
-                if k > self.pro + 2:
+                if k == self.pro_num:
                     break
                 doc = json.loads(result.raw)
-                if doc["id"] == proid:
-                    continue
                 if doc["id"] in pro2go:
-                    k += 1
-                    res.append(pro2go[doc["id"]])
-                else:
-                    res.append([])
-
-            if k < self.pro + 2:
-                print(f"Insufficient retrievals ({k}) for Protein ID: {proid}")
+                    res.extend(pro2go[doc["id"]])
+                    k+=1
 
             retrieval_dict[proid] = res
-
+        print("Write GO Terms Retrieval Results:", save_file)
         np.save(save_file, retrieval_dict)
         return retrieval_dict
 
-    def rerank(self):
-        """
-        Perform reranking on retrieved GO annotations.
-        """
-        retrieval_data = self.all_retrieval_dict()
-        pro2text = self.data_extract()
-        score_dict = os.path.join(self.save_dir, f"{self.task}_t5_scores.npy")
+def rerank(self):
+    """
+    Perform reranking on retrieved GO terms using a cross-encoder model.
+    Saves the final reranked results in a text file.
+    """
+    retrieval_data = self.retrieval()
+    pro2text = self.data_extract()
+    score_dict = os.path.join(self.save_dir, "caches", f"{self.task}_{self.data}_t5_scores.npy")
+    os.makedirs(os.path.dirname(save_file), exist_ok=True)
 
-        if os.path.exists(score_dict):
-            print(f"Loading scores from cache: {score_dict}")
-            score = self._load_metadata(score_dict)
-        else:
-            score = {}
+    # Load cached scores if available
+    if os.path.exists(score_dict):
+        print(f"Loading score cache from: {score_dict}")
+        score = self._load_metadata(score_dict)
+    else:
+        score = {}
 
-        data = []
+    # Initialize GO document retriever
+    data = []
 
-        for proid, go_annotations in tqdm(retrieval_data.items(), desc="Reranking"):
-            if len(go_annotations) == 0:
-                print(f"No retrievals for Protein ID: {proid}")
+    print("Starting reranking process...")
+    for proid in tqdm(retrieval_data, desc="Reranking GO terms"):
+        predicts = []
+        goids = []
+
+        # Get protein name
+        try:
+            proname = self.proid2name[proid]
+        except KeyError:
+            print(f"Missing protein name: {proid}")
+            continue
+
+        # Construct query
+        try:
+            query = f"The protein is \"{proname}\", the document is \"{pro2text[proid]}\"."
+        except KeyError:
+            print(f"Text data missing for protein: {proid}")
+            continue
+
+        # Retrieve GO term documents and prepare inputs for reranking
+        for goid in retrieval_data[proid]:
+            if not retrieval_data[proid]:
+                print(f"No retrieval GO terms found for: {proid}")
                 continue
 
-            if proid not in pro2text:
-                print(f"Missing text for Protein ID: {proid}")
+            if not score.get(proid):
+                score[proid] = {}
+            elif score[proid].get(goid):
+                continue  # Skip if score already cached
+
+            # Fetch GO document content
+            try:
+                contents = json.loads(self.go_searcher.doc(goid.replace("GO:", "").strip()).raw())["contents"]
+            except AttributeError:
+                print(f"GO term missing in index: {goid}")
                 continue
 
-            query = f"The protein is \"{self.metadata[proid]}\", the document is \"{pro2text[proid]}\"."
-            predicts, goids = [], []
+            goids.append(goid)
+            predicts.append([query, contents])
 
-            for goid in go_annotations:
-                if len(go_annotations) == 0:
-                    continue
-                if proid not in score:
-                    score[proid] = {}
-                if goid in score[proid]:
-                    continue
+        # Skip if there are no new predictions to score
+        if not predicts:
+            print(f"Score cache used for protein: {proid}")
+            continue
 
-                try:
-                    contents = json.loads(self.go_searcher.doc(goid.replace("GO:", "").strip()).raw())["contents"]
-                except AttributeError:
-                    print(f"GO Missing: {goid}")
-                    continue
+        # Perform reranking using the cross-encoder
+        scores = self.cross_encoder.predict(predicts, batch_size=96, show_progress_bar=False)
+        for i, goid in enumerate(goids):
+            score[proid][goid] = f"{scores[i]:.3f}"
 
-                goids.append(goid)
-                predicts.append([query, contents])
+    # Save updated scores to cache
+    np.save(score_dict, score)
+    print(f"Reranking scores saved to: {score_dict}")
 
-            if len(predicts) == 0:
-                continue
+    # Generate final ranked results
+    print("Generating reranked results...")
+    for proid in tqdm(retrieval_data, desc="Finalizing reranked results"):
+        if not retrieval_data[proid]:
+            print(f"Retrieval error for protein: {proid}")
+            continue
+        if proid not in score:
+            print(f"Score missing for protein: {proid}")
+            continue
 
-            scores = self.cross_encoder.predict(predicts, batch_size=96, show_progress_bar=False)
-            for i, goid in enumerate(goids):
-                score[proid][goid] = "%.3f" % float(scores[i])
+        res = {goid: score[proid].get(goid, "0") for goid in retrieval_data[proid]}
+        sorted_res = sorted(res.items(), key=lambda x: x[1], reverse=True)[:50]
 
-        np.save(score_dict, score)
+        for goid, s in sorted_res:
+            data.append(f"{proid}\t{goid}\t{s}\n")
 
-        for proid, go_annotations in retrieval_data.items():
-            res = {goid: str(score[proid].get(goid, 0)) for goid in go_annotations}
-            res = sorted(res.items(), key=lambda x: x[1], reverse=True)[:50]
-            for goid, s in res:
-                data.append(f"{proid}\t{goid}\t{s}\n")
+    # Save final reranked results
+    save_file = os.path.join(self.save_dir, f"{self.task}_t5_{self.data}_rerank.txt")
+    if self.args.pro != "0":
+        save_file = save_file.replace("_rerank.txt", f"_rerank_pro_{self.pro_num}.txt")
 
-        save_file = os.path.join(self.save_dir, f"{self.task}_rerank.txt")
-        with open(save_file, "w") as wf:
-            wf.writelines(data)
-        print(f"Rerank results saved to: {save_file}")
+    with open(save_file, "w") as wf:
+        wf.writelines(data)
+
+    print(f"Rerank results saved to: {save_file}")
+    print("Reranking process completed!")

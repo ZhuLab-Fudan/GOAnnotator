@@ -16,7 +16,6 @@ def get_text(url):
         "Mozilla/5.0 (Macintosh; U; PPC Mac OS X 10.5; en-US; rv:1.9.2.15) Gecko/20110303 Firefox/3.6.15",
     ]
     headers['User-Agent'] = random.choice(user_agent_list)
-
     content = requests.get(url, headers = headers).text
     # time.sleep(10)
     soup = bs(content, 'lxml')
