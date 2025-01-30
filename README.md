@@ -34,7 +34,7 @@ cd src/dependencies
 tar -xzvf protein_metadata.tar.gz protein_metadata.npy
 ```
 
-# Predict
+# Prediction
 
 For GOR2023/SP2024/TR2024:
 
