@@ -8,7 +8,8 @@ class Config:
     """Configuration for file paths and parameters."""
     PRO_INDEX_PATH = os.path.join(BASE_DIR, "dependencies", "pro_index")
     GO_INDEX_PATH = os.path.join(BASE_DIR, "dependencies", "go_index")
-    PMID_INDEX_PATH = os.path.join(BASE_DIR, "dependencies", "2024-pubmed-uniprot-index")
+    # PMID_INDEX_PATH = os.path.join(BASE_DIR, "dependencies", "2024-pubmed-uniprot-index")
+    PMID_INDEX_PATH = "/home/zhuzz/liyouli/2024-pubmed-uniprot-index/"
     PMID2TEXT_FILE = os.path.join(BASE_DIR, "dependencies", "pmid2text.npy")
     TASK_PRO2GO_FILE = os.path.join(BASE_DIR, "dependencies", "{}_pro2go.npy")
     METADATA_PATH = os.path.join(BASE_DIR, "dependencies", "protein_metadata.npy")

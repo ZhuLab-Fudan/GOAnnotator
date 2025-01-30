@@ -10,8 +10,8 @@ from transformers import T5ForConditionalGeneration
 import nltk
 import torch.nn as nn
 
-from src.utils import TASK_DEFINITIONS, extract_for_train, Config
-from utils import get_text
+from utils import TASK_DEFINITIONS, extract_for_train, Config
+from goretriever_plus.utils import get_text
 
 
 class GORetrieverPlus:
@@ -22,11 +22,14 @@ class GORetrieverPlus:
         Initialize the GORetrieverPlus class.
         """
         
+        self.config = config
         self.save_dir = save_dir
+        self.task = task
         self.data = data
         self.input = input
-        self.filter_rank = filter_rank
         self.pro_num=pro_num
+        self.filter_rank = filter_rank
+        
 
         # Load metadata
         metadata = self._load_metadata(config.METADATA_PATH)
@@ -38,7 +41,7 @@ class GORetrieverPlus:
 
         # Initialize models
         self.t5_reranker = self._initialize_t5_model()
-        self.cross_encoder = CrossEncoder(config.MODEL_PATH.format(task), max_length=512)
+        self.cross_encoder = CrossEncoder(config.GOR_MODEL_PATH.format(task), max_length=512)
         self.tokenizer = nltk.data.load("tokenizers/punkt/english.pickle")
 
     @staticmethod
@@ -182,103 +185,103 @@ class GORetrieverPlus:
         np.save(save_file, retrieval_dict)
         return retrieval_dict
 
-def rerank(self):
-    """
-    Perform reranking on retrieved GO terms using a cross-encoder model.
-    Saves the final reranked results in a text file.
-    """
-    retrieval_data = self.retrieval()
-    pro2text = self.data_extract()
-    score_dict = os.path.join(self.save_dir, "caches", f"{self.task}_{self.data}_t5_scores.npy")
-    os.makedirs(os.path.dirname(save_file), exist_ok=True)
+    def rerank(self):
+        """
+        Perform reranking on retrieved GO terms using a cross-encoder model.
+        Saves the final reranked results in a text file.
+        """
+        retrieval_data = self.retrieval()
+        pro2text = self.data_extract()
+        score_dict = os.path.join(self.save_dir, "caches", f"{self.task}_{self.data}_t5_scores.npy")
+        save_file = os.path.join(self.save_dir, f"{self.task}_t5_{self.data}_rerank.txt")
+        if self.pro_num != "0":
+            save_file = save_file.replace("_rerank.txt", f"_rerank_pro_{self.pro_num}.txt")
+        os.makedirs(os.path.dirname(save_file), exist_ok=True)
 
-    # Load cached scores if available
-    if os.path.exists(score_dict):
-        print(f"Loading score cache from: {score_dict}")
-        score = self._load_metadata(score_dict)
-    else:
-        score = {}
+        # Load cached scores if available
+        if os.path.exists(score_dict):
+            print(f"Loading score cache from: {score_dict}")
+            score = self._load_metadata(score_dict)
+        else:
+            score = {}
 
-    # Initialize GO document retriever
-    data = []
+        # Initialize GO document retriever
+        data = []
 
-    print("Starting reranking process...")
-    for proid in tqdm(retrieval_data, desc="Reranking GO terms"):
-        predicts = []
-        goids = []
+        print("Starting reranking process...")
+        for proid in tqdm(retrieval_data, desc="Reranking GO terms"):
+            predicts = []
+            goids = []
 
-        # Get protein name
-        try:
-            proname = self.proid2name[proid]
-        except KeyError:
-            print(f"Missing protein name: {proid}")
-            continue
-
-        # Construct query
-        try:
-            query = f"The protein is \"{proname}\", the document is \"{pro2text[proid]}\"."
-        except KeyError:
-            print(f"Text data missing for protein: {proid}")
-            continue
-
-        # Retrieve GO term documents and prepare inputs for reranking
-        for goid in retrieval_data[proid]:
-            if not retrieval_data[proid]:
-                print(f"No retrieval GO terms found for: {proid}")
-                continue
-
-            if not score.get(proid):
-                score[proid] = {}
-            elif score[proid].get(goid):
-                continue  # Skip if score already cached
-
-            # Fetch GO document content
+            # Get protein name
             try:
-                contents = json.loads(self.go_searcher.doc(goid.replace("GO:", "").strip()).raw())["contents"]
-            except AttributeError:
-                print(f"GO term missing in index: {goid}")
+                proname = self.proid2name[proid]
+            except KeyError:
+                print(f"Missing protein name: {proid}")
                 continue
 
-            goids.append(goid)
-            predicts.append([query, contents])
+            # Construct query
+            try:
+                query = f"The protein is \"{proname}\", the document is \"{pro2text[proid]}\"."
+            except KeyError:
+                print(f"Text data missing for protein: {proid}")
+                continue
 
-        # Skip if there are no new predictions to score
-        if not predicts:
-            print(f"Score cache used for protein: {proid}")
-            continue
+            # Retrieve GO term documents and prepare inputs for reranking
+            for goid in retrieval_data[proid]:
+                if not retrieval_data[proid]:
+                    print(f"No retrieval GO terms found for: {proid}")
+                    continue
 
-        # Perform reranking using the cross-encoder
-        scores = self.cross_encoder.predict(predicts, batch_size=96, show_progress_bar=False)
-        for i, goid in enumerate(goids):
-            score[proid][goid] = f"{scores[i]:.3f}"
+                if not score.get(proid):
+                    score[proid] = {}
+                elif score[proid].get(goid):
+                    continue  # Skip if score already cached
 
-    # Save updated scores to cache
-    np.save(score_dict, score)
-    print(f"Reranking scores saved to: {score_dict}")
+                # Fetch GO document content
+                try:
+                    contents = json.loads(self.go_searcher.doc(goid.replace("GO:", "").strip()).raw())["contents"]
+                except AttributeError:
+                    print(f"GO term missing in index: {goid}")
+                    continue
 
-    # Generate final ranked results
-    print("Generating reranked results...")
-    for proid in tqdm(retrieval_data, desc="Finalizing reranked results"):
-        if not retrieval_data[proid]:
-            print(f"Retrieval error for protein: {proid}")
-            continue
-        if proid not in score:
-            print(f"Score missing for protein: {proid}")
-            continue
+                goids.append(goid)
+                predicts.append([query, contents])
 
-        res = {goid: score[proid].get(goid, "0") for goid in retrieval_data[proid]}
-        sorted_res = sorted(res.items(), key=lambda x: x[1], reverse=True)[:50]
+            # Skip if there are no new predictions to score
+            if not predicts:
+                print(f"Score cache used for protein: {proid}")
+                continue
 
-        for goid, s in sorted_res:
-            data.append(f"{proid}\t{goid}\t{s}\n")
+            # Perform reranking using the cross-encoder
+            scores = self.cross_encoder.predict(predicts, batch_size=96, show_progress_bar=False)
+            for i, goid in enumerate(goids):
+                score[proid][goid] = f"{scores[i]:.3f}"
 
-    # Save final reranked results
-    save_file = os.path.join(self.save_dir, f"{self.task}_t5_{self.data}_rerank.txt")
-    if self.args.pro != "0":
-        save_file = save_file.replace("_rerank.txt", f"_rerank_pro_{self.pro_num}.txt")
+        # Save updated scores to cache
+        np.save(score_dict, score)
+        print(f"Reranking scores saved to: {score_dict}")
 
-    with open(save_file, "w") as wf:
-        wf.writelines(data)
+        # Generate final ranked results
+        print("Generating reranked results...")
+        for proid in tqdm(retrieval_data, desc="Finalizing reranked results"):
+            if not retrieval_data[proid]:
+                print(f"Retrieval error for protein: {proid}")
+                continue
+            if proid not in score:
+                print(f"Score missing for protein: {proid}")
+                continue
 
-    print(f"Rerank results saved to: {save_file}")
-    print("Reranking process completed!")
+            res = {goid: score[proid].get(goid, "0") for goid in retrieval_data[proid]}
+            sorted_res = sorted(res.items(), key=lambda x: x[1], reverse=True)[:50]
+
+            for goid, s in sorted_res:
+                data.append(f"{proid}\t{goid}\t{s}\n")
+
+        # Save final reranked results
+
+        with open(save_file, "w") as wf:
+            wf.writelines(data)
+
+        print(f"Rerank results saved to: {save_file}")
+        print("Reranking process completed!")

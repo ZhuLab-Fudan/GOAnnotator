@@ -1,6 +1,5 @@
 import argparse
-from src.goretriever_plus.goretriever_plus import GORetrieverPlus
-from src.pubretriever.pubretriever import PubRetriever
+from goretriever_plus.goretriever_plus import GORetrieverPlus
 from utils import Config
 
 def main():
@@ -15,7 +14,7 @@ def main():
 
     args = parser.parse_args()
 
-
+    Config.GOR_MODEL_PATH = "whitneyyan0122/GORetriever_plus_{}_PubMedBERT"
     config = Config()
     retriever = GORetrieverPlus(config, args.save_dir, args.task, args.data, args.input, args.pro_num, args.filter_rank)
     

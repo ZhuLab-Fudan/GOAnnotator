@@ -7,8 +7,8 @@ from tqdm import tqdm
 import numpy as np
 
 # Import utilities
-from utils import average_scores
-from src.utils import TASK_DEFINITIONS, filter_text, filter_species, extract_for_FIR, extract_for_train, Config
+from pubretriever.utils import average_scores
+from utils import TASK_DEFINITIONS, filter_text, filter_species, extract_for_FIR, extract_for_train, Config
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -17,7 +17,7 @@ class PubRetriever:
     A class for protein-related literature retrieval and reranking for function annotation.
     """
 
-    def __init__(self, config: Config, model_path: str, input: List[str], output: List[str], k: int = 50, task: str = "mf"):
+    def __init__(self, config: Config, model_path: str, input: str, output: str, k: int = 50, task: str = "mf"):
         """
         Initialize the PubRetriever.
         
@@ -207,7 +207,7 @@ class PubRetriever:
         """
         with open(self.input) as input_file:
             with open(self.output, "w") as output_file:
-                proids = [_.strip() for _ in input_file.readlines]
+                proids = [_.strip() for _ in input_file.readlines()]
                 for proid in tqdm(proids, desc="Processing proteins"):
                     if proid not in self.metadata:
                         print(f"Metadata missing for Protein ID: {proid}")
