@@ -4,7 +4,8 @@ log_folder="../logs"
 mkdir -p "$log_folder"
 
 start=1
-end=100
+# the maximum number in https://ftp.ncbi.nlm.nih.gov/pubmed/baseline/: 1274
+end=1274
 max_jobs=5
 step=50
 
