@@ -52,7 +52,7 @@ def average_scores(scores: List[float]) -> float:
     """
     return sum(scores) / len(scores) if scores else 0.0
 
-def extract_for_train(data):
+def extract_for_FIR(data):
     """
     Extracts the recommended names from the input dictionary and combines them into a single string.
     
@@ -69,10 +69,10 @@ def extract_for_train(data):
     
     # Filter out empty values and join them with a comma
     names = ", ".join(name for name in [rec_name, short_name, alt_name] if name)
-    return names
+    return filter_text(names)
 
 
-def extract_for_FIR(data):
+def extract_for_train(data):
     """
     Extracts full protein information and formats it into a detailed string.
     
@@ -86,21 +86,29 @@ def extract_for_FIR(data):
     rec_name = data.get('full name', {}).get('RecName', "")
     short_name = data.get('short name', "")
     alt_name = data.get('full name', {}).get('AltName', "")
-    ordered_locus_names = data.get('gene name', {}).get('name', [{}])[0].get('OrderedLocusNames', [])
+    gene_info = data.get('gene name', {}).get('name', [])
+
+    if isinstance(gene_info, list) and gene_info:
+        first_entry = gene_info[0]  
+        ordered_locus_names = first_entry.get('Name', '')  
+        if not ordered_locus_names:  
+            ordered_locus_names = first_entry.get('OrderedLocusNames', [''])[0] 
+    else:
+        ordered_locus_names = ''
     species = data.get('species', "")
     
     # Combine recommended names
     names = ", ".join(name for name in [rec_name, short_name, alt_name] if name)
     
-    # Format OrderedLocusNames and species
-    ordered_locus_names_str = f"The OrderedLocusNames is {ordered_locus_names}" if ordered_locus_names else ""
+    # Format gene name and species
+    gene_name_str = f"The Name is {ordered_locus_names}" if ordered_locus_names else ""
     species_str = f"The species is {species}" if species else ""
     
     # Combine all parts, separated by tabs
     full_info = "\t".join(part for part in [
         f"The recommended names are {names}" if names else "",
-        ordered_locus_names_str,
+        gene_name_str,
         species_str
     ] if part)
     
-    return full_info
+    return filter_text(full_info)
