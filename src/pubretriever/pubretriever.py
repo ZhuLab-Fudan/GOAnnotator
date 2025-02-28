@@ -183,7 +183,7 @@ class PubRetriever:
         scores = self.model.predict(inputs, batch_size=96, show_progress_bar=False)
         for i, doc in enumerate(documents):
             doc['score'] = scores[i]
-        return sorted(documents, key=lambda x: x['score'], reverse=True)
+        return sorted(documents, key=lambda x: x['score'], reverse=True)[:10]
     
     def retrieve_and_rerank(self, protein_metadata: Dict) -> List[Dict[str, str]]:
         """
