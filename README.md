@@ -1,6 +1,6 @@
 # GOAnnotator
 
-Official code for GOAnnotator
+Official code for [[**ISMB/ECCB 2025**]GOAnnotator: accurate protein function annotation using automatically retrieved literature](https://academic.oup.com/bioinformatics/article/41/Supplement_1/i410/8199377?searchresult=1#supplementary-data)
 
 # Requirements
 
