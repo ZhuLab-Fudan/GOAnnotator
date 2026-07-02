@@ -1,6 +1,10 @@
 # GOAnnotator
 
-Official code for [[**ISMB/ECCB 2025**]GOAnnotator: accurate protein function annotation using automatically retrieved literature](https://academic.oup.com/bioinformatics/article/41/Supplement_1/i410/8199377)
+Official code for [[**ISMB/ECCB 2025**] GOAnnotator: accurate protein function annotation using automatically retrieved literature](https://academic.oup.com/bioinformatics/article/41/Supplement_1/i410/8199377)
+
+⚠️ **[NOTICE]** Due to an oversight on our part, incorrect model parameters were previously uploaded for PubRetriever-reranker. If you downloaded the model parameters before **July 2, 2026**, please download [the updated model parameters](https://huggingface.co/whitneyyan0122/pubretriever-reranker).
+
+⚠️ **[2026-07-02]** We have fixed several bugs in [pubretriever.py](https://github.com/ZhuLab-Fudan/GOAnnotator/blob/main/src/pubretriever/pubretriever.py).
 
 # Requirements
 
