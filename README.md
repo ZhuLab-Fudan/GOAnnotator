@@ -4,7 +4,7 @@ Official code for [[**ISMB/ECCB 2025**] GOAnnotator: accurate protein function a
 
 ⚠️ **[NOTICE]** Due to an oversight on our part, incorrect model parameters were previously uploaded for **PubRetriever-reranker**. If you downloaded the model parameters before **July 2, 2026**, please download [the updated model parameters](https://huggingface.co/whitneyyan0122/pubretriever-reranker).
 
-⚠️ **[2026-07-02]** We have fixed several bugs in [pubretriever.py](https://github.com/ZhuLab-Fudan/GOAnnotator/blob/main/src/pubretriever/pubretriever.py).
+⚠️ **[2026-07-02]** We have fixed several bugs in [pubretriever.py](https://github.com/ZhuLab-Fudan/GOAnnotator/blob/main/src/pubretriever/pubretriever.py). Thanks for [@c1oud1ess](https://github.com/c1oud1ess) 's feedback😊.
 
 # Requirements
 
